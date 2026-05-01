@@ -669,7 +669,7 @@ function showApp(){
 
 async function loadAll(){
   document.getElementById('loading-text').textContent='Loading sets…';
-  const { data: setsData } = await sb.from('sets').select('*').order('id');
+  const { data: setsData } = await sb.schema('card_data').from('sets').select('*').order('id');
   SETS = setsData || [];
   SET_MAP = {};
   SETS.forEach(s => SET_MAP[s.id] = s);
@@ -679,7 +679,7 @@ async function loadAll(){
   let allApps = [];
   let from = 0, batchSize = 1000;
   while(true){
-    const { data } = await sb.from('player_appearances').select('*').range(from, from+batchSize-1);
+    const { data } = await sb.schema('card_data').from('player_appearances').select('*').range(from, from+batchSize-1);
     if(!data || !data.length) break;
     allApps = allApps.concat(data);
     if(data.length < batchSize) break;
