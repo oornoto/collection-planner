@@ -562,6 +562,30 @@ html,body{height:100%;overflow:hidden;font-family:-apple-system,BlinkMacSystemFo
           <div id="ed-app-set-results" style="background:#131720;border:1px solid #2d3548;border-top:none;border-radius:0 0 5px 5px;max-height:150px;overflow-y:auto;display:none"></div>
           <input type="hidden" id="ed-app-set-id">
         </div>
+        <div id="ed-app-new-set-fields" style="display:none;background:#0f1320;border:1px solid #2d3548;border-radius:5px;padding:10px 12px;margin-top:-6px;margin-bottom:8px">
+          <div style="font-size:0.65rem;font-weight:700;color:#f59e0b;text-transform:uppercase;letter-spacing:0.06em;margin-bottom:10px">New set — fill in details then click Save again</div>
+          <div class="editor-field"><label>Set Type</label>
+            <select id="ed-app-new-set-type">
+              <option>True Card Set</option><option>Tobacco Card</option><option>Cabinet</option>
+              <option>Caramel/Candy Card</option><option>Oddball/Food Issue</option>
+              <option>Postcard</option><option>HOF Plaque Postcard</option>
+              <option>Stamp/Sticker</option><option>Strip Card</option><option>Coin/Disc</option>
+              <option>Game Card</option><option>Newspaper/Periodical</option>
+              <option>Newspaper/Periodical Supplement</option><option>Silks/Blankets/Leathers</option>
+              <option>Pin/Button</option><option>Studio Cabinet</option>
+              <option>Studio Cabinet / Photo</option><option>Tobacco Card / Oddball</option>
+            </select>
+          </div>
+          <div class="editor-field"><label>Type Multiplier (0.5–1.0)</label><input type="number" id="ed-app-new-set-mult" value="1.0" min="0.1" max="2.0" step="0.05"></div>
+          <div class="editor-field" style="display:flex;gap:16px">
+            <label style="display:flex;align-items:center;gap:6px;font-size:0.72rem;color:#64748b;text-transform:none;letter-spacing:0;margin-bottom:0">
+              <input type="checkbox" id="ed-app-new-set-vs"> Vintage Sampler
+            </label>
+            <label style="display:flex;align-items:center;gap:6px;font-size:0.72rem;color:#64748b;text-transform:none;letter-spacing:0;margin-bottom:0">
+              <input type="checkbox" id="ed-app-new-set-ts"> Topps Sampler
+            </label>
+          </div>
+        </div>
         <div class="editor-field"><label>Tier</label>
           <select id="ed-app-tier">
             <option value="A">A — First rookie card</option>
@@ -1426,9 +1450,10 @@ document.querySelectorAll('.editor-tab').forEach(tab=>{
 // Set search for appearance editor
 const setSearchInput = document.getElementById('ed-app-set-search');
 const setResults = document.getElementById('ed-app-set-results');
+const newSetFields = document.getElementById('ed-app-new-set-fields');
 setSearchInput.addEventListener('input',()=>{
   const q=setSearchInput.value.toLowerCase();
-  if(!q){ setResults.style.display='none'; return; }
+  if(!q){ setResults.style.display='none'; document.getElementById('ed-app-set-id').value=''; newSetFields.style.display='none'; return; }
   const matches=SETS.filter(s=>s.name.toLowerCase().includes(q)).slice(0,10);
   setResults.innerHTML=matches.map(s=>`<div style="padding:6px 10px;font-size:0.75rem;color:#e2e8f0;cursor:pointer;border-bottom:1px solid #1e2535" data-set-id="${s.id}" data-set-name="${s.name}">${s.name}</div>`).join('');
   setResults.style.display=matches.length?'block':'none';
@@ -1437,6 +1462,8 @@ setSearchInput.addEventListener('input',()=>{
       setSearchInput.value=el.dataset.setName;
       document.getElementById('ed-app-set-id').value=el.dataset.setId;
       setResults.style.display='none';
+      newSetFields.style.display='none';
+      document.getElementById('ed-app-err').textContent='';
     });
   });
 });
@@ -1466,13 +1493,41 @@ document.getElementById('ed-save-set').addEventListener('click', async ()=>{
 document.getElementById('ed-save-appearance').addEventListener('click', async ()=>{
   const playerName=document.getElementById('ed-app-player').value.trim();
   const warRankVal=document.getElementById('ed-app-war').value;
-  const setId=parseInt(document.getElementById('ed-app-set-id').value);
+  let setId=parseInt(document.getElementById('ed-app-set-id').value);
   const tier=document.getElementById('ed-app-tier').value;
   const firstTcs=document.getElementById('ed-app-ftcs').checked;
+  const typedSetName=document.getElementById('ed-app-set-search').value.trim();
   const errEl=document.getElementById('ed-app-err');
   errEl.textContent='';
   if(!playerName){ errEl.textContent='Player name is required.'; return; }
-  if(!setId){ errEl.textContent='Please select a set.'; return; }
+
+  if(newSetFields.style.display!=='none'){
+    // Panel is open — create the new set, then fall through to save the appearance
+    const newSetId=Math.max(...SETS.map(s=>s.id),0)+1;
+    const newSet={
+      id:newSetId, name:typedSetName,
+      type:document.getElementById('ed-app-new-set-type').value,
+      type_mult:parseFloat(document.getElementById('ed-app-new-set-mult').value)||1.0,
+      vintage_sampler:document.getElementById('ed-app-new-set-vs').checked,
+      topps_sampler:document.getElementById('ed-app-new-set-ts').checked
+    };
+    const {error:setErr}=await sb.from('custom_data').insert({user_id:currentUser.id,type:'set',payload:newSet});
+    if(setErr){ errEl.textContent='Failed to save set: '+setErr.message; return; }
+    SETS.push(newSet); SET_MAP[newSetId]=newSet;
+    setId=newSetId;
+    newSetFields.style.display='none';
+  } else if(!setId){
+    if(!typedSetName){ errEl.textContent='Please select or enter a set name.'; return; }
+    const exact=SETS.find(s=>s.name.toLowerCase()===typedSetName.toLowerCase());
+    if(exact){
+      setId=exact.id;
+    } else {
+      newSetFields.style.display='block';
+      errEl.textContent='New set — fill in the details above and click Save again.';
+      return;
+    }
+  }
+
   const newId=Math.max(...APPEARANCES.map(a=>a.id),0)+1;
   const newApp={id:newId, player_name:playerName, war_rank:warRankVal?parseInt(warRankVal):null, set_id:setId, tier, first_tcs:firstTcs};
   const {error}=await sb.from('custom_data').insert({user_id:currentUser.id,type:'player_appearance',payload:newApp});
@@ -1484,6 +1539,9 @@ document.getElementById('ed-save-appearance').addEventListener('click', async ()
   document.getElementById('ed-app-set-search').value='';
   document.getElementById('ed-app-set-id').value='';
   document.getElementById('ed-app-ftcs').checked=false;
+  document.getElementById('ed-app-new-set-mult').value='1.0';
+  document.getElementById('ed-app-new-set-vs').checked=false;
+  document.getElementById('ed-app-new-set-ts').checked=false;
   showToast(`✓ Card appearance added for ${playerName}`);
   refreshAll();
 });
